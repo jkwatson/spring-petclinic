@@ -17,6 +17,7 @@ package org.springframework.samples.petclinic.vet;
 
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import java.util.Map;
@@ -53,6 +54,13 @@ class VetController {
 		Vets vets = new Vets();
 		vets.getVetList().addAll(this.vets.findAll());
 		return vets;
+	}
+
+	@GetMapping({ "/vets/{id}" })
+	public @ResponseBody Vet getVetById(@PathVariable("id") int vetId) {
+		// Here we are returning an object of type 'Vets' rather than a collection of Vet
+		// objects so it is simpler for JSon/Object mapping
+		return vets.findById(vetId);
 	}
 
 }

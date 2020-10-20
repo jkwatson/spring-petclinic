@@ -17,6 +17,8 @@ package org.springframework.samples.petclinic.owner;
 
 import java.util.Collection;
 
+import java.util.List;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.Repository;
 import org.springframework.data.repository.query.Param;
@@ -60,5 +62,9 @@ public interface OwnerRepository extends Repository<Owner, Integer> {
 	 * @param owner the {@link Owner} to save
 	 */
 	void save(Owner owner);
+
+	@Transactional(readOnly = true)
+	@Cacheable("vets")
+	List<Owner> findAll();
 
 }

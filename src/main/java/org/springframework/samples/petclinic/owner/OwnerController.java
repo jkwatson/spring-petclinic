@@ -15,6 +15,8 @@
  */
 package org.springframework.samples.petclinic.owner;
 
+import java.util.Collections;
+import java.util.List;
 import org.springframework.samples.petclinic.visit.VisitRepository;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -24,6 +26,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.InitBinder;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.servlet.ModelAndView;
 
 import javax.validation.Valid;
@@ -140,6 +143,27 @@ class OwnerController {
 		}
 		mav.addObject(owner);
 		return mav;
+	}
+
+	/**
+	 * Custom handler for displaying an owner.
+	 * @param ownerId the ID of the owner to display
+	 * @return a ModelMap with the model attributes for the view
+	 */
+	@GetMapping(value = "/owners/{ownerId}", produces = "application/json")
+	public @ResponseBody Owner showOwnerRaw(@PathVariable("ownerId") int ownerId) {
+		Owner owner = this.owners.findById(ownerId);
+		List<Pet> pets = owner.getPets();
+		for (Pet pet : pets) {
+			// hack to prevent json recursion
+			pet.setOwner(null);
+		}
+		return owner;
+	}
+
+	@GetMapping(value = "/owners/all", produces = "application/json")
+	public @ResponseBody List<Owner> allOwners() {
+		return owners.findAll();
 	}
 
 }
