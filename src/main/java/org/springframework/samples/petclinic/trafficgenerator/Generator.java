@@ -1,102 +1,130 @@
 package org.springframework.samples.petclinic.trafficgenerator;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.newrelic.api.agent.Trace;
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.http.HttpResponse.BodyHandlers;
 import java.util.List;
 import java.util.Random;
+import okhttp3.Call;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Request.Builder;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
 import org.springframework.samples.petclinic.owner.Owner;
-import org.springframework.samples.petclinic.owner.OwnerRepository;
 import org.springframework.samples.petclinic.owner.Pet;
-import org.springframework.samples.petclinic.owner.PetRepository;
 import org.springframework.samples.petclinic.vet.Vet;
-import org.springframework.samples.petclinic.vet.VetRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 @Component
 public class Generator {
 
-	private final VetRepository vetRepository;
+  public static final MediaType APPLICATION_JSON = MediaType.parse("application/json");
+  private final OkHttpClient httpClient;
 
-	private final OwnerRepository ownerRepository;
+  private final ObjectMapper objectMapper;
 
-	private final PetRepository petRepository;
+  private final Random random = new Random();
 
-	private final HttpClient httpClient;
+  public Generator(OkHttpClient httpClient, ObjectMapper objectMapper) {
+    this.httpClient = httpClient;
+    this.objectMapper = objectMapper;
+  }
 
-	private final ObjectMapper objectMapper;
+  @Scheduled(fixedDelay = 1500)
+  @Trace(dispatcher = true)
+  public void generateSomeTraffic() throws IOException {
+    long randomVetId = getRandomVetId();
+    List<Owner> owners = getAllOwners();
+    Owner randomOwner = owners.get(random.nextInt(owners.size()));
+    Owner fullOwner = queryOwnerDeets(randomOwner);
+    if (fullOwner.getPets().isEmpty()) {
+      return;
+    }
+    Pet aPet = fullOwner.getPets().get(random.nextInt(fullOwner.getPets().size()));
+    Vet vet = getVetById(randomVetId);
+    System.out.println("vet = " + vet);
+    //todo: can we make an appointment, then maybe delete it?
 
-	private final Random random = new Random();
+    if (random.nextInt(100) < 4) {
+      postAn404();
+    }
+    if (random.nextInt(100) < 2) {
+      postAnError();
+    }
 
-	public Generator(VetRepository vetRepository, OwnerRepository ownerRepository, PetRepository petRepository,
-			HttpClient httpClient, ObjectMapper objectMapper) {
-		this.vetRepository = vetRepository;
-		this.ownerRepository = ownerRepository;
-		this.petRepository = petRepository;
-		this.httpClient = httpClient;
-		this.objectMapper = objectMapper;
-	}
+  }
 
-	@Scheduled(fixedDelay = 1500)
-	public void generateSomeTraffic() throws IOException, InterruptedException {
-		System.out.println("querying");
-		long randomVetId = getRandomVetId();
-		List<Owner> owners = getAllOwners();
-		Owner randomOwner = owners.get(random.nextInt(owners.size()));
-		Owner fullOwner = queryOwnerDeets(randomOwner);
-		if (fullOwner.getPets().isEmpty()) {
-			return;
-		}
-		Pet aPet = fullOwner.getPets().get(random.nextInt(fullOwner.getPets().size()));
-		Vet vet = getVetById(randomVetId);
-	}
+  @Trace
+  private void postAn404() throws IOException {
+    Call call = httpClient.newCall(
+        new Builder()
+            .url("http://localhost:8080/nope")
+            .post(RequestBody.create("{}", APPLICATION_JSON)).build());
+    Response response = call.execute();
+    response.body().close();
+  }
 
-	private Vet getVetById(long vetId) throws IOException, InterruptedException {
-		HttpRequest request = HttpRequest.newBuilder().GET().header("Accept", "application/json")
-				.uri(URI.create("http://localhost:8080/vets/" + vetId)).build();
-		HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
-		String body = response.body();
-		return objectMapper.readValue(body, Vet.class);
-	}
+  @Trace
+  private void postAnError() throws IOException {
+    System.out.println("posting an error");
+    Call call = httpClient.newCall(
+        new Builder()
+            .url("http://localhost/nope")
+            .post(RequestBody.create("{}", APPLICATION_JSON)).build());
+    Response response = call.execute();
+    response.body().close();
+  }
 
-	private Owner queryOwnerDeets(Owner owner) throws IOException, InterruptedException {
-		HttpRequest request = HttpRequest.newBuilder().GET().header("Accept", "application/json")
-				.uri(URI.create("http://localhost:8080/owners/" + owner.getId())).build();
-		HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
-		String body = response.body();
-		return objectMapper.readValue(body, Owner.class);
-	}
+  @Trace
+  private Vet getVetById(long vetId) throws IOException {
+    String url = "http://localhost:8080/vets/" + vetId;
+    String body = get(url);
+    return objectMapper.readValue(body, Vet.class);
+  }
 
-	private List<Owner> getAllOwners() throws IOException, InterruptedException {
-		HttpRequest request = HttpRequest.newBuilder().GET().uri(URI.create("http://localhost:8080/owners/all"))
-				.build();
-		HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
-		String body = response.body();
-		List<Owner> owners = objectMapper.readValue(body, new TypeReference<List<Owner>>() {
-		});
-		return owners;
-	}
+  @Trace
+  private Owner queryOwnerDeets(Owner owner) throws IOException {
+    String body = get("http://localhost:8080/owners/" + owner.getId());
+    return objectMapper.readValue(body, Owner.class);
+  }
 
-	private long getRandomVetId() throws IOException, InterruptedException {
-		HttpRequest request = HttpRequest.newBuilder().GET().uri(URI.create("http://localhost:8080/vets")).build();
-		HttpResponse<String> response = httpClient.send(request, BodyHandlers.ofString());
-		String body = response.body();
-		JsonNode jsonNode = objectMapper.readTree(body);
-		ArrayNode vets = (ArrayNode) jsonNode.get("vetList");
-		int size = vets.size();
-		int vetToUse = random.nextInt(size);
-		JsonNode vet = vets.get(vetToUse);
-		long vetId = vet.get("id").asLong();
-		return vetId;
-	}
+  @Trace
+  private List<Owner> getAllOwners() throws IOException {
+    String body = get("http://localhost:8080/owners/all");
+    List<Owner> owners = objectMapper.readValue(body, new TypeReference<List<Owner>>() {
+    });
+    return owners;
+  }
 
+  @Trace
+  private long getRandomVetId() throws IOException {
+    String body = get("http://localhost:8080/vets");
+    JsonNode jsonNode = objectMapper.readTree(body);
+    ArrayNode vets = (ArrayNode) jsonNode.get("vetList");
+    int size = vets.size();
+    int vetToUse = random.nextInt(size);
+    JsonNode vet = vets.get(vetToUse);
+    return vet.get("id").asLong();
+  }
+
+  private String get(String url) throws IOException {
+
+    Call call = httpClient
+        .newCall(new Request.Builder()
+            .url(url)
+            .header("Accept", "application/json")
+            .build());
+    Response execute = call.execute();
+    ResponseBody responseBody = execute.body();
+    String body = responseBody.string();
+    responseBody.close();
+    return body;
+  }
 }

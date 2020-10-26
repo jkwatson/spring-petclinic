@@ -78,8 +78,7 @@ public class Vet extends Person {
 
 	@Override
 	public String toString() {
-		return "Vet{" +
-				"specialties=" + specialties +
-				"} " + super.toString();
+		return "Vet{" + "specialties=" + specialties + "} " + super.toString();
 	}
+
 }
